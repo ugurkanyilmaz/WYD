@@ -1,6 +1,11 @@
 # Add your project dependencies here, e.g.:
-# fastapi
-# sqlalchemy
-# alembic
-# pydantic
-# uvicorn
+fastapi
+sqlalchemy
+alembic
+pydantic
+uvicorn
+python-dotenv
+passlib[bcrypt]
+python-jose
+psycopg2-binary
+# ...varsa diğer bağımlılıklarınızı buraya ekleyin...
