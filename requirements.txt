@@ -1,6 +1,0 @@
-# Add your project dependencies here, e.g.:
-# fastapi
-# sqlalchemy
-# alembic
-# pydantic
-# uvicorn
