@@ -30,3 +30,8 @@ def login(user_login: UserLogin, db: Session = Depends(get_db)):
 
     access_token = security.create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(security.get_current_user)):
+    return current_user
+

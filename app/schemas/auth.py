@@ -1,4 +1,3 @@
-# Authentication schemas will be defined here.
 from pydantic import BaseModel, Field
 
 # Schema for user registration
