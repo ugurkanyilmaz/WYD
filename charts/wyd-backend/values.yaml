@@ -1,0 +1,65 @@
+image:
+  repository: ghcr.io/your-org/wyd-backend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: api-example-com-tls
+      hosts:
+        - api.example.com
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1
+    memory: 1Gi
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+
+env:
+  # Non-secret config
+  - name: AWS_S3_BUCKET
+    value: "wyd-photo-bucket"
+  - name: AWS_S3_REGION
+    value: "eu-north-1"
+
+secretEnv:
+  # Refer to existing secret keys (create externally)
+  - name: JWT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: wyd-secrets
+        key: jwt-secret
+  - name: FCM_SERVER_KEY
+    valueFrom:
+      secretKeyRef:
+        name: wyd-secrets
+        key: fcm-server-key
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # Example IRSA:
+  # annotations:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<irsa-role>

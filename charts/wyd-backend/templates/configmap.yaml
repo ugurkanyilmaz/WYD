@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wyd-backend.fullname" . }}-config
+  labels:
+    app.kubernetes.io/name: {{ include "wyd-backend.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  # Placeholder. We pass env directly via values; this file exists for hashing.
+  dummy: "1"
