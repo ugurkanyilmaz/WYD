@@ -1,11 +1,10 @@
 import os
-import aioboto3
 from prometheus_client import Gauge, start_http_server
 
 KAFKA_PRODUCER = None
 KAFKA_CONSUMER = None
 REDIS = None
-S3_SESSION = None
+MONGO = None
 
 def init_metrics(port:int=8001):
     # Expose a separate metrics port (could integrate into main app using ASGI middleware)
@@ -45,6 +44,13 @@ async def redis_startup():
         print('redis startup failed:', e)
         REDIS = None
 
-async def init_s3():
-    global S3_SESSION
-    S3_SESSION = aioboto3.Session()
+# S3 removed
+
+async def mongo_startup():
+    """Lightweight Mongo client for user settings and profiles."""
+    global MONGO
+    try:
+        from motor.motor_asyncio import AsyncIOMotorClient
+        MONGO = AsyncIOMotorClient(os.getenv('MONGO_URL','mongodb://localhost:27017'))
+    except Exception as e:
+        print('mongo startup failed:', e)

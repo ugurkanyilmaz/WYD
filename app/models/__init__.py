@@ -12,12 +12,8 @@ Base = declarative_base()
 
 # Import models to register tables
 from .users import User  # noqa: F401,E402
-from .posts import Post  # noqa: F401,E402
-from .comments import Comment  # noqa: F401,E402
-from .likes import likes_table  # noqa: F401,E402
 from .friend_requests import FriendRequest  # noqa: F401,E402
 from .notifications import Notification  # noqa: F401,E402
 from .session_tokens import SessionToken  # noqa: F401,E402
-from .stories import Story  # noqa: F401,E402
 from .messages import Message  # noqa: F401,E402
 from .friendships import Friendship  # noqa: F401,E402

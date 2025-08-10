@@ -9,3 +9,6 @@ class MessageOut(BaseModel):
     sender_id: int
     recipient_id: int
     content: str
+
+    class Config:
+        orm_mode = True

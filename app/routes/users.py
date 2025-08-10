@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from ..schemas.users import RegisterIn, TokenOut, UserOut, RefreshIn
+from ..schemas.friendships import AreFriendsOut, ActionOkOut
 from ..crud import create_user, authenticate_user, get_user_by_id, send_friend_request, accept_friend_request, create_notification, refresh_access_token, revoke_refresh_token, create_friendship, are_friends, list_friends
-from ..auth import create_access_token, decode_token
-from ..storage import generate_presigned_upload
+from ..auth import create_access_token, decode_token, get_current_user
 from ..cache import invalidate_profile_cache, set_profile_cache
 from typing import Optional
+from ..core import MONGO
 
 router = APIRouter()
 
@@ -27,7 +28,7 @@ async def refresh(payload: RefreshIn):
         raise HTTPException(status_code=401, detail='Invalid refresh token')
     return token
 
-@router.post('/logout')
+@router.post('/logout', response_model=ActionOkOut)
 async def logout(payload: RefreshIn):
     ok = await revoke_refresh_token(payload.refresh_token)
     return {'ok': bool(ok)}
@@ -39,15 +40,29 @@ async def get_profile(user_id: int):
         raise HTTPException(404, 'Not found')
     return user
 
-@router.post('/{user_id}/friend-request')
-async def friend_request(user_id:int, current_user:dict = Depends(lambda: {'id': 1})):
+# Media listing disabled temporarily
+# @router.get('/{user_id}/media')
+# async def get_profile_media(user_id:int, current_user:dict = Depends(lambda: {'id': 1})):
+#     ...
+
+@router.post('/me/privacy', response_model=ActionOkOut)
+async def set_privacy(mode:str, current_user:dict = Depends(get_current_user)):
+    if mode not in ('public','private'):
+        raise HTTPException(400, 'mode must be public or private')
+    if not MONGO:
+        raise HTTPException(503, 'storage unavailable')
+    await MONGO.wyd.users.update_one({'_id': current_user['id']}, {'$set': {'privacy': mode}}, upsert=True)
+    return {'ok': True}
+
+@router.post('/{user_id}/friend-request', response_model=ActionOkOut)
+async def friend_request(user_id:int, current_user:dict = Depends(get_current_user)):
     fr = await send_friend_request(current_user['id'], user_id)
     # produce notification
     await create_notification(user_id, f'Friend request from {current_user["id"]}')
-    return {'ok': True, 'request_id': fr.id}
+    return {'ok': True}
 
-@router.post('/friend-request/{request_id}/accept')
-async def accept_request(request_id:int, current_user:dict = Depends(lambda: {'id': 1})):
+@router.post('/friend-request/{request_id}/accept', response_model=ActionOkOut)
+async def accept_request(request_id:int, current_user:dict = Depends(get_current_user)):
     fr = await accept_friend_request(request_id)
     if not fr or fr.to_user != current_user['id']:
         raise HTTPException(404, 'Not found')
@@ -56,20 +71,14 @@ async def accept_request(request_id:int, current_user:dict = Depends(lambda: {'i
     await create_notification(fr.from_user, f'Friend request accepted by {fr.to_user}')
     return {'ok': True}
 
-@router.get('/{other_id}/are-friends')
-async def check_friend(other_id:int, current_user:dict = Depends(lambda: {'id': 1})):
+@router.get('/{other_id}/are-friends', response_model=AreFriendsOut)
+async def check_friend(other_id:int, current_user:dict = Depends(get_current_user)):
     return {'friends': await are_friends(current_user['id'], other_id)}
 
 @router.get('/me/friends', response_model=list[UserOut])
-async def my_friends(current_user:dict = Depends(lambda: {'id': 1})):
+async def my_friends(current_user:dict = Depends(get_current_user)):
     return await list_friends(current_user['id'])
 
-@router.post('/avatar/presign')
-async def presign_avatar(filename: str = Form(...), content_type: str = Form(...), current_user:dict = Depends(lambda: {'id': 1})):
-    key = f'avatars/{current_user["id"]}/{filename}'
-    url = await generate_presigned_upload(key, content_type)
-    # invalidate profile cache after client uploads and notifies backend
-    await invalidate_profile_cache(current_user['id'])
-    return {'upload_url': url, 'key': key}
+# moved to /api/media endpoints
 
 # OAuth endpoints removed; only username/password auth supported.

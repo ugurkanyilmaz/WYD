@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import router
-from .core import kafka_startup, redis_startup, init_s3, init_metrics
+from .core import kafka_startup, redis_startup, init_metrics, mongo_startup
 from starlette.middleware.base import BaseHTTPMiddleware
 import logging
 from pythonjsonlogger import jsonlogger
@@ -50,13 +50,13 @@ async def startup():
     except Exception as e:
         logger.warning({'msg': 'kafka_start_failed', 'error': str(e)})
     try:
-        await init_s3()
-    except Exception as e:
-        logger.warning({'msg': 's3_init_failed', 'error': str(e)})
-    try:
         init_metrics()
     except Exception as e:
         logger.warning({'msg': 'metrics_init_failed', 'error': str(e)})
+    try:
+        await mongo_startup()
+    except Exception as e:
+        logger.warning({'msg': 'mongo_init_failed', 'error': str(e)})
 
 @app.on_event("shutdown")
 async def shutdown():

@@ -5,7 +5,6 @@ asyncpg==0.27.0
 alembic==1.11.1
 pydantic==1.10.11
 aiokafka==0.8.0
-aioboto3==11.0.0
 aioredis==2.0.1
 motor==3.1.1
 python-jose==3.3.0

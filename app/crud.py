@@ -1,19 +1,16 @@
 from .models import AsyncSessionLocal
 from .models.users import User
-from .models.posts import Post
-from .models.comments import Comment
 from .models.friend_requests import FriendRequest
 from .models.notifications import Notification
-from .models.likes import likes_table
 from .models.session_tokens import SessionToken
-from .models.stories import Story
 from .models.messages import Message
 from .models.friendships import Friendship
 from passlib.context import CryptContext
 from .auth import create_access_token, generate_refresh_token, hash_token
-from sqlalchemy import select, insert, update, delete, func
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 pwd_ctx = CryptContext(schemes=['bcrypt'], deprecated='auto')
 
@@ -79,34 +76,7 @@ async def get_user_by_id(user_id: int):
         q = await session.execute(select(User).where(User.id==user_id))
         return q.scalars().first()
 
-# posts
-async def create_post(author_id: int, content: str):
-    async with AsyncSessionLocal() as session:
-        post = Post(author_id=author_id, content=content)
-        session.add(post)
-        await session.commit()
-        await session.refresh(post)
-        return post
-
-# comments (threading)
-async def create_comment(author_id: int, post_id: int, content: str, parent_id: int = None):
-    async with AsyncSessionLocal() as session:
-        c = Comment(author_id=author_id, post_id=post_id, content=content, parent_id=parent_id)
-        session.add(c)
-        await session.commit()
-        await session.refresh(c)
-        return c
-
-# likes (idempotent)
-async def like_post(user_id: int, post_id: int):
-    async with AsyncSessionLocal() as session:
-        try:
-            await session.execute(insert(likes_table).values(user_id=user_id, post_id=post_id))
-            await session.commit()
-            return True
-        except IntegrityError:
-            await session.rollback()
-            return False
+## comments/likes removed
 
 # friendships
 async def send_friend_request(from_user:int, to_user:int):
@@ -170,23 +140,7 @@ async def create_notification(user_id:int, payload:str):
         await session.refresh(n)
         return n
 
-# stories
-async def create_story(user_id:int, s3_key:str, caption:str|None, expires_in_seconds:int=86400):
-    async with AsyncSessionLocal() as session:
-        expires_at = datetime.utcnow() + timedelta(seconds=expires_in_seconds)
-        story = Story(user_id=user_id, s3_key=s3_key, caption=caption, expires_at=expires_at, is_active=True)
-        session.add(story)
-        await session.commit()
-        await session.refresh(story)
-        return story
-
-async def list_active_stories(user_id:int|None=None):
-    async with AsyncSessionLocal() as session:
-        q = select(Story).where(Story.is_active == True, Story.expires_at > datetime.utcnow())
-        if user_id:
-            q = q.where(Story.user_id == user_id)
-        res = await session.execute(q)
-        return res.scalars().all()
+# stories deprecated in favor of media feature
 
 # messaging
 async def send_message(sender_id:int, recipient_id:int, content:str):

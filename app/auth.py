@@ -1,5 +1,6 @@
 import os
 from jose import jwt, JWTError
+from fastapi import Header, HTTPException, Depends
 from datetime import datetime, timedelta
 import secrets
 import hashlib
@@ -36,3 +37,12 @@ def decode_token(token: str):
         return None
 
 # OAuth support removed per project decision; only JWT-based auth is used.
+
+async def get_current_user(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    token = authorization.split(' ', 1)[1]
+    payload = decode_token(token)
+    if not payload or 'id' not in payload:
+        raise HTTPException(status_code=401, detail='Invalid token')
+    return {'id': payload['id'], 'username': payload.get('username')}

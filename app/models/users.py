@@ -11,6 +11,6 @@ class User(Base):
     phone_number = Column(String(50), unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     display_name = Column(String, nullable=True)
-    avatar_url = Column(String, nullable=True)
+    profile_picture_url = Column(String, nullable=True)
     blocked = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

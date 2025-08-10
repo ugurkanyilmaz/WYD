@@ -23,7 +23,10 @@ class UserOut(BaseModel):
     email: EmailStr
     phone_number: str
     display_name: Optional[str]
-    avatar_url: Optional[str]
+    profile_picture_url: Optional[str]
+
+    class Config:
+        orm_mode = True
 
 class LoginIn(BaseModel):
     username: str
