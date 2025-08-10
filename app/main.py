@@ -3,6 +3,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import router
 from .core import kafka_startup, redis_startup, init_metrics, mongo_startup
+from .queue_manager import queue_manager
+from .workers import worker_registry
 from starlette.middleware.base import BaseHTTPMiddleware
 import logging
 from pythonjsonlogger import jsonlogger
@@ -57,7 +59,33 @@ async def startup():
         await mongo_startup()
     except Exception as e:
         logger.warning({'msg': 'mongo_init_failed', 'error': str(e)})
+    
+    # Initialize queue system
+    try:
+        await queue_manager.initialize()
+        logger.info({'msg': 'queue_system_initialized'})
+    except Exception as e:
+        logger.warning({'msg': 'queue_init_failed', 'error': str(e)})
+    
+    # Start background workers
+    try:
+        await worker_registry.start_all_workers()
+        logger.info({'msg': 'workers_started'})
+    except Exception as e:
+        logger.warning({'msg': 'workers_start_failed', 'error': str(e)})
 
 @app.on_event("shutdown")
 async def shutdown():
-    pass
+    # Graceful shutdown of workers
+    try:
+        await worker_registry.stop_all_workers()
+        logger.info({'msg': 'workers_stopped'})
+    except Exception as e:
+        logger.warning({'msg': 'workers_stop_failed', 'error': str(e)})
+    
+    # Shutdown queue system
+    try:
+        await queue_manager.close()
+        logger.info({'msg': 'queue_system_closed'})
+    except Exception as e:
+        logger.warning({'msg': 'queue_close_failed', 'error': str(e)})
