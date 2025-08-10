@@ -1,4 +1,0 @@
-- Prometheus metrics exposed; use Grafana for dashboards.
-- Centralized logs: send JSON logs to Loki or ELK.
-- Add traces with OpenTelemetry for distributed tracing.
-- Create SLOs and alerts (error rate, latency, queue backlog).

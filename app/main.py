@@ -40,10 +40,23 @@ async def log_requests(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup():
-    await redis_startup()
-    await kafka_startup()
-    await init_s3()
-    init_metrics()
+    # Best-effort init, don't block app from starting if a dependency fails
+    try:
+        await redis_startup()
+    except Exception as e:
+        logger.warning({'msg': 'redis_start_failed', 'error': str(e)})
+    try:
+        await kafka_startup()
+    except Exception as e:
+        logger.warning({'msg': 'kafka_start_failed', 'error': str(e)})
+    try:
+        await init_s3()
+    except Exception as e:
+        logger.warning({'msg': 's3_init_failed', 'error': str(e)})
+    try:
+        init_metrics()
+    except Exception as e:
+        logger.warning({'msg': 'metrics_init_failed', 'error': str(e)})
 
 @app.on_event("shutdown")
 async def shutdown():

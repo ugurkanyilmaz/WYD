@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional
 
 class RegisterIn(BaseModel):
     username: str
@@ -13,6 +13,7 @@ class RegisterIn(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = 'bearer'
+    refresh_token: str | None = None
 
 class UserOut(BaseModel):
     id: int
@@ -27,16 +28,12 @@ class UserOut(BaseModel):
 class LoginIn(BaseModel):
     username: str
     password: str
+    device_id: Optional[str] = None
+    user_agent: Optional[str] = None
+    ip: Optional[str] = None
 
-class PostIn(BaseModel):
-    content: str
+class RefreshIn(BaseModel):
+    refresh_token: str
 
-class PostOut(BaseModel):
-    id: int
-    author_id: int
-    content: str
-
-class CommentIn(BaseModel):
-    post_id: int
-    content: str
-    parent_id: Optional[int]
+class LogoutIn(BaseModel):
+    refresh_token: str

@@ -2,7 +2,7 @@
 
 This repository is a comprehensive example backend for a scalable social media platform,
 built with FastAPI and async tooling. It includes many production-ready patterns and modules:
-- Auth (JWT + OAuth placeholder flows), social logins skeleton
+- Auth (JWT-based), no OAuth
 - User profiles, avatar upload via S3 presigned URLs
 - Friend requests, blocking
 - Posts, likes, comments with threading (nested comments)

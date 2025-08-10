@@ -25,20 +25,19 @@ services:
       - "6379:6379"
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:8.1.1
+    image: bitnami/zookeeper:3.9
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+      - ALLOW_ANONYMOUS_LOGIN=yes
 
   kafka:
-    image: confluentinc/cp-kafka:8.1.1
+    image: bitnami/kafka:3.6
     depends_on: [zookeeper]
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1
     ports:
       - "9092:9092"
 
@@ -65,16 +64,16 @@ services:
       - kafka
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      MONGO_URL: ${MONGO_URL}
+      MONGO_URL: ${MONGODB_URL}
       REDIS_URL: ${REDIS_URL}
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
       AWS_S3_REGION: ${AWS_S3_REGION}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      FCM_SERVER_KEY: ${FCM_SERVER_KEY}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
     ports:
       - "8000:8000"
     volumes:

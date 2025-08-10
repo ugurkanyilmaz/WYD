@@ -1,7 +1,5 @@
 import os
-from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
 import aioboto3
-import aioredis
 from prometheus_client import Gauge, start_http_server
 
 KAFKA_PRODUCER = None
@@ -17,14 +15,35 @@ def init_metrics(port:int=8001):
         print('prometheus start failed', e)
 
 async def kafka_startup():
+    """Start Kafka producer if dependencies are available; don't crash on failure."""
     global KAFKA_PRODUCER
-    brokers = os.getenv('KAFKA_BOOTSTRAP_SERVERS','localhost:9092')
-    KAFKA_PRODUCER = AIOKafkaProducer(bootstrap_servers=brokers)
-    await KAFKA_PRODUCER.start()
+    try:
+        from aiokafka import AIOKafkaProducer
+    except Exception as e:
+        print('kafka import failed:', e)
+        KAFKA_PRODUCER = None
+        return
+    try:
+        brokers = os.getenv('KAFKA_BOOTSTRAP_SERVERS','localhost:9092')
+        KAFKA_PRODUCER = AIOKafkaProducer(bootstrap_servers=brokers)
+        await KAFKA_PRODUCER.start()
+    except Exception as e:
+        print('kafka startup failed:', e)
+        KAFKA_PRODUCER = None
 
 async def redis_startup():
     global REDIS
-    REDIS = await aioredis.from_url(os.getenv('REDIS_URL','redis://localhost:6379/0'), decode_responses=False)
+    try:
+        import aioredis  # lazy import to avoid startup crash if incompatible
+    except Exception as e:
+        print('redis import failed:', e)
+        REDIS = None
+        return
+    try:
+        REDIS = await aioredis.from_url(os.getenv('REDIS_URL','redis://localhost:6379/0'), decode_responses=False)
+    except Exception as e:
+        print('redis startup failed:', e)
+        REDIS = None
 
 async def init_s3():
     global S3_SESSION

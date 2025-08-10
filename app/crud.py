@@ -1,9 +1,19 @@
-from .models import AsyncSessionLocal, User, Post, Comment, FriendRequest, Notification, likes_table
+from .models import AsyncSessionLocal
+from .models.users import User
+from .models.posts import Post
+from .models.comments import Comment
+from .models.friend_requests import FriendRequest
+from .models.notifications import Notification
+from .models.likes import likes_table
+from .models.session_tokens import SessionToken
+from .models.stories import Story
+from .models.messages import Message
+from .models.friendships import Friendship
 from passlib.context import CryptContext
-from .auth import create_access_token
-from sqlalchemy.future import select, insert, update, delete
-from sqlalchemy import select as sql_select, func
+from .auth import create_access_token, generate_refresh_token, hash_token
+from sqlalchemy import select, insert, update, delete, func
 from sqlalchemy.exc import IntegrityError
+from datetime import datetime, timedelta
 
 pwd_ctx = CryptContext(schemes=['bcrypt'], deprecated='auto')
 
@@ -23,14 +33,46 @@ async def create_user(payload):
         await session.refresh(user)
         return user
 
-async def authenticate_user(username, password):
+async def authenticate_user(username, password, device_id: str | None = None, user_agent: str | None = None, ip: str | None = None):
     async with AsyncSessionLocal() as session:
         q = await session.execute(select(User).where(User.username == username))
         user = q.scalars().first()
         if not user or not pwd_ctx.verify(password, user.hashed_password):
             return None
-        token = create_access_token({'id': user.id, 'username': user.username})
-        return {'access_token': token, 'token_type': 'bearer'}
+        access = create_access_token({'id': user.id, 'username': user.username})
+        refresh = generate_refresh_token()
+        token_hash = hash_token(refresh)
+        expires_at = datetime.utcnow() + timedelta(days=30)
+        st = SessionToken(user_id=user.id, device_id=device_id, token_hash=token_hash, user_agent=user_agent, ip=ip, expires_at=expires_at)
+        session.add(st)
+        await session.commit()
+        return {'access_token': access, 'token_type': 'bearer', 'refresh_token': refresh}
+
+async def refresh_access_token(refresh_token: str):
+    async with AsyncSessionLocal() as session:
+        token_hash = hash_token(refresh_token)
+        q = await session.execute(select(SessionToken).where(SessionToken.token_hash == token_hash, SessionToken.revoked_at.is_(None), SessionToken.expires_at > datetime.utcnow()))
+        st = q.scalars().first()
+        if not st:
+            return None
+        uq = await session.execute(select(User).where(User.id == st.user_id))
+        user = uq.scalars().first()
+        if not user:
+            return None
+        access = create_access_token({'id': user.id, 'username': user.username})
+        return {'access_token': access, 'token_type': 'bearer'}
+
+async def revoke_refresh_token(refresh_token: str):
+    async with AsyncSessionLocal() as session:
+        token_hash = hash_token(refresh_token)
+        q = await session.execute(select(SessionToken).where(SessionToken.token_hash == token_hash, SessionToken.revoked_at.is_(None)))
+        st = q.scalars().first()
+        if not st:
+            return False
+        st.revoked_at = datetime.utcnow()
+        session.add(st)
+        await session.commit()
+        return True
 
 async def get_user_by_id(user_id: int):
     async with AsyncSessionLocal() as session:
@@ -86,6 +128,39 @@ async def accept_friend_request(request_id:int):
         await session.commit()
         return fr
 
+async def create_friendship(user_a:int, user_b:int):
+    # store ordered pair to keep uniqueness
+    a, b = sorted([user_a, user_b])
+    async with AsyncSessionLocal() as session:
+        try:
+            f = Friendship(user_id=a, friend_id=b)
+            session.add(f)
+            await session.commit()
+            await session.refresh(f)
+            return f
+        except IntegrityError:
+            await session.rollback()
+            # already friends
+            res = await session.execute(select(Friendship).where(Friendship.user_id==a, Friendship.friend_id==b))
+            return res.scalars().first()
+
+async def are_friends(user_a:int, user_b:int) -> bool:
+    a, b = sorted([user_a, user_b])
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Friendship).where(Friendship.user_id==a, Friendship.friend_id==b))
+        return res.scalars().first() is not None
+
+async def list_friends(user_id:int):
+    async with AsyncSessionLocal() as session:
+        # friends are rows where (user_id==me) or (friend_id==me)
+        res1 = await session.execute(select(Friendship.friend_id).where(Friendship.user_id==user_id))
+        res2 = await session.execute(select(Friendship.user_id).where(Friendship.friend_id==user_id))
+        ids = set([*res1.scalars().all(), *res2.scalars().all()])
+        if not ids:
+            return []
+        users = await session.execute(select(User).where(User.id.in_(ids)))
+        return users.scalars().all()
+
 # notifications (write to DB and push to Kafka via producer in routes)
 async def create_notification(user_id:int, payload:str):
     async with AsyncSessionLocal() as session:
@@ -94,3 +169,39 @@ async def create_notification(user_id:int, payload:str):
         await session.commit()
         await session.refresh(n)
         return n
+
+# stories
+async def create_story(user_id:int, s3_key:str, caption:str|None, expires_in_seconds:int=86400):
+    async with AsyncSessionLocal() as session:
+        expires_at = datetime.utcnow() + timedelta(seconds=expires_in_seconds)
+        story = Story(user_id=user_id, s3_key=s3_key, caption=caption, expires_at=expires_at, is_active=True)
+        session.add(story)
+        await session.commit()
+        await session.refresh(story)
+        return story
+
+async def list_active_stories(user_id:int|None=None):
+    async with AsyncSessionLocal() as session:
+        q = select(Story).where(Story.is_active == True, Story.expires_at > datetime.utcnow())
+        if user_id:
+            q = q.where(Story.user_id == user_id)
+        res = await session.execute(q)
+        return res.scalars().all()
+
+# messaging
+async def send_message(sender_id:int, recipient_id:int, content:str):
+    async with AsyncSessionLocal() as session:
+        m = Message(sender_id=sender_id, recipient_id=recipient_id, content=content)
+        session.add(m)
+        await session.commit()
+        await session.refresh(m)
+        return m
+
+async def list_dialog(user_id:int, peer_id:int):
+    async with AsyncSessionLocal() as session:
+        q = select(Message).where(
+            ((Message.sender_id==user_id) & (Message.recipient_id==peer_id)) |
+            ((Message.sender_id==peer_id) & (Message.recipient_id==user_id))
+        ).order_by(Message.created_at.asc())
+        res = await session.execute(q)
+        return res.scalars().all()

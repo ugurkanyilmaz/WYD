@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from ..schemas import PostIn, PostOut, CommentIn
+from ..schemas.posts import PostIn, PostOut, CommentIn
 from ..crud import create_post, create_comment, like_post
 from typing import List
 
