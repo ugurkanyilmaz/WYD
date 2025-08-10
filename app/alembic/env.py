@@ -1,5 +1,7 @@
 import asyncio
 import os
+import sys
+from pathlib import Path
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -7,6 +9,12 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+
+# Ensure the app base directory is on sys.path so 'models' can be imported
+HERE = Path(__file__).resolve().parent  # .../app/alembic
+APP_BASE = HERE.parent  # .../app
+if str(APP_BASE) not in sys.path:
+    sys.path.insert(0, str(APP_BASE))
 
 # Import your models and Base
 from models import Base

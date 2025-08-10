@@ -7,7 +7,7 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from enum import Enum
-from .core import KAFKA_PRODUCER, REDIS
+from . import core
 import logging
 
 logger = logging.getLogger(__name__)
@@ -105,11 +105,12 @@ class QueueManager:
 
     async def _enqueue_redis(self, queue_type: QueueType, job_data: Dict, priority: Priority):
         """Enqueue to Redis for fast processing"""
-        if not REDIS:
+        redis_client = await core.get_redis()
+        if not redis_client:
             return
-            
+
         queue_name = self.redis_queues[queue_type]
-        
+
         # Use priority queues in Redis
         if priority == Priority.CRITICAL:
             queue_name += ":critical"
@@ -117,55 +118,61 @@ class QueueManager:
             queue_name += ":high"
         else:
             queue_name += ":normal"
-            
-        await REDIS.lpush(queue_name, json.dumps(job_data))
-        
+
+        await redis_client.lpush(queue_name, json.dumps(job_data))
+
         # Set expiration for job data (24 hours)
-        await REDIS.expire(queue_name, 86400)
+        await redis_client.expire(queue_name, 86400)
 
     async def _enqueue_kafka(self, queue_type: QueueType, job_data: Dict):
         """Enqueue to Kafka for persistence and scaling"""
-        if not KAFKA_PRODUCER:
+        kafka_producer = await core.get_kafka_producer()
+        if not kafka_producer:
             return
-            
+
         topic = self.kafka_topics[queue_type]
-        
+
         # Partition by user_id for better distribution
         partition_key = str(job_data.get('user_id', 0)).encode()
-        
-        await KAFKA_PRODUCER.send(
-            topic, 
+
+        await kafka_producer.send(
+            topic,
             value=json.dumps(job_data).encode('utf-8'),
             key=partition_key
         )
 
     async def _track_job(self, job_id: str, job_data: Dict):
         """Track job status in Redis"""
-        if not REDIS:
+        redis_client = await core.get_redis()
+        if not redis_client:
             return
-            
-        await REDIS.setex(f"job:{job_id}", 3600, json.dumps(job_data))  # 1 hour TTL
+
+        await redis_client.setex(f"job:{job_id}", 3600, json.dumps(job_data))  # 1 hour TTL
 
     async def dequeue(self, queue_type: QueueType, batch_size: int = 1) -> List[Dict]:
         """
         Dequeue jobs for processing with batch support for high throughput
         """
         jobs = []
-        
-        if not REDIS:
+
+        redis_client = await core.get_redis()
+        if not redis_client:
             return jobs
-            
+
         queue_name = self.redis_queues[queue_type]
-        
+
         # Process critical and high priority first
         for priority_suffix in [":critical", ":high", ":normal"]:
             priority_queue = queue_name + priority_suffix
             
             for _ in range(batch_size):
-                job_data = await REDIS.rpop(priority_queue)
+                job_data = await redis_client.rpop(priority_queue)
                 if job_data:
                     try:
-                        job = json.loads(job_data)
+                        if isinstance(job_data, (bytes, bytearray)):
+                            job = json.loads(job_data.decode("utf-8"))
+                        else:
+                            job = json.loads(job_data)
                         jobs.append(job)
                     except json.JSONDecodeError:
                         logger.error(f"Invalid job data in queue: {job_data}")
@@ -181,10 +188,11 @@ class QueueManager:
     async def get_queue_stats(self) -> Dict[str, Dict[str, int]]:
         """Get queue statistics for monitoring"""
         stats = {}
-        
-        if not REDIS:
+
+        redis_client = await core.get_redis()
+        if not redis_client:
             return stats
-            
+
         for queue_type, redis_queue in self.redis_queues.items():
             queue_stats = {
                 "critical": 0,
@@ -196,7 +204,7 @@ class QueueManager:
             for priority in ["critical", "high", "normal"]:
                 queue_name = f"{redis_queue}:{priority}"
                 try:
-                    length = await REDIS.llen(queue_name)
+                    length = await redis_client.llen(queue_name)
                     queue_stats[priority] = length
                     queue_stats["total"] += length
                 except:
@@ -208,19 +216,27 @@ class QueueManager:
 
     async def get_job_status(self, job_id: str) -> Optional[Dict]:
         """Get job status by ID"""
-        if not REDIS:
+        redis_client = await core.get_redis()
+        if not redis_client:
             return None
-            
-        job_data = await REDIS.get(f"job:{job_id}")
+
+        job_data = await redis_client.get(f"job:{job_id}")
         if job_data:
-            return json.loads(job_data)
+            try:
+                if isinstance(job_data, (bytes, bytearray)):
+                    return json.loads(job_data.decode("utf-8"))
+                return json.loads(job_data)
+            except json.JSONDecodeError:
+                logger.error(f"Invalid job status data for job {job_id}: {job_data}")
+                return None
         return None
 
     async def update_job_status(self, job_id: str, status: str, result: Optional[Dict] = None):
         """Update job status"""
-        if not REDIS:
+        redis_client = await core.get_redis()
+        if not redis_client:
             return
-            
+
         job_data = await self.get_job_status(job_id)
         if job_data:
             job_data["status"] = status
@@ -228,7 +244,51 @@ class QueueManager:
             if result:
                 job_data["result"] = result
                 
-            await REDIS.setex(f"job:{job_id}", 3600, json.dumps(job_data))
+            await redis_client.setex(f"job:{job_id}", 3600, json.dumps(job_data))
+
+    async def initialize(self):
+        """Initialize the queue manager"""
+        logger.info("Initializing Queue Manager...")
+        try:
+            # Wait a moment for core services to be ready
+            import time
+            await asyncio.sleep(0.5)
+            
+            # Test Redis connection
+            redis_client = await core.get_redis()
+            if redis_client:
+                await redis_client.ping()
+                logger.info("Queue Manager initialized with Redis")
+            else:
+                logger.warning("Queue Manager initialized without Redis")
+                
+            # Test Kafka connection
+            kafka_producer = await core.get_kafka_producer()
+            if kafka_producer:
+                logger.info("Queue Manager initialized with Kafka")
+            else:
+                logger.warning("Queue Manager initialized without Kafka")
+                
+            # Test MongoDB connection
+            mongo_client = await core.get_mongo()
+            if mongo_client:
+                await mongo_client.admin.command('ping')
+                logger.info("Queue Manager initialized with MongoDB")
+            else:
+                logger.warning("Queue Manager initialized without MongoDB")
+                
+        except Exception as e:
+            logger.error(f"Queue Manager initialization failed: {e}")
+            raise
+
+    async def close(self):
+        """Close the queue manager"""
+        logger.info("Closing Queue Manager...")
+        try:
+            # Clean up any resources if needed
+            logger.info("Queue Manager closed successfully")
+        except Exception as e:
+            logger.error(f"Queue Manager close failed: {e}")
 
 # Global queue manager instance
 queue_manager = QueueManager()

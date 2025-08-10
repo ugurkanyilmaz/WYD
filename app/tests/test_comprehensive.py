@@ -6,7 +6,7 @@ from httpx import AsyncClient
 # Set test database URL
 os.environ.setdefault('DATABASE_URL', 'postgresql+asyncpg://social:socialpass@localhost:5432/socialdb')
 
-from main import app
+from app.main import app
 
 class TestComprehensiveAPI:
     """Comprehensive test suite for all API features"""

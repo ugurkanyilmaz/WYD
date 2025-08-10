@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routes import router
 from .core import kafka_startup, redis_startup, init_metrics, mongo_startup
 from .queue_manager import queue_manager
-from .workers import worker_registry
+from .workers import worker_manager
 from starlette.middleware.base import BaseHTTPMiddleware
 import logging
 from pythonjsonlogger import jsonlogger
@@ -43,24 +43,33 @@ async def log_requests(request: Request, call_next):
 @app.on_event("startup")
 async def startup():
     # Best-effort init, don't block app from starting if a dependency fails
+    logger.info({'msg': 'app_startup_beginning'})
+    
     try:
         await redis_startup()
+        logger.info({'msg': 'redis_connected'})
     except Exception as e:
-        logger.warning({'msg': 'redis_start_failed', 'error': str(e)})
+        logger.warning({'msg': 'redis_unavailable', 'error': str(e), 'note': 'continuing without caching'})
+    
     try:
         await kafka_startup()
+        logger.info({'msg': 'kafka_connected'})
     except Exception as e:
-        logger.warning({'msg': 'kafka_start_failed', 'error': str(e)})
+        logger.warning({'msg': 'kafka_unavailable', 'error': str(e), 'note': 'continuing without message queues'})
+    
     try:
         init_metrics()
+        logger.info({'msg': 'metrics_initialized'})
     except Exception as e:
-        logger.warning({'msg': 'metrics_init_failed', 'error': str(e)})
+        logger.warning({'msg': 'metrics_unavailable', 'error': str(e)})
+    
     try:
         await mongo_startup()
+        logger.info({'msg': 'mongodb_connected'})
     except Exception as e:
-        logger.warning({'msg': 'mongo_init_failed', 'error': str(e)})
+        logger.warning({'msg': 'mongodb_unavailable', 'error': str(e), 'note': 'continuing without analytics storage'})
     
-    # Initialize queue system
+    # Initialize queue system (will work even without Redis/Kafka)
     try:
         await queue_manager.initialize()
         logger.info({'msg': 'queue_system_initialized'})
@@ -69,16 +78,18 @@ async def startup():
     
     # Start background workers
     try:
-        await worker_registry.start_all_workers()
+        await worker_manager.start_all()
         logger.info({'msg': 'workers_started'})
     except Exception as e:
         logger.warning({'msg': 'workers_start_failed', 'error': str(e)})
+    
+    logger.info({'msg': 'app_startup_complete'})
 
 @app.on_event("shutdown")
 async def shutdown():
     # Graceful shutdown of workers
     try:
-        await worker_registry.stop_all_workers()
+        await worker_manager.stop_all()
         logger.info({'msg': 'workers_stopped'})
     except Exception as e:
         logger.warning({'msg': 'workers_stop_failed', 'error': str(e)})

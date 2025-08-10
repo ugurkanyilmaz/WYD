@@ -9,7 +9,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 from .queue_manager import queue_manager, QueueType
 from .cache import cache
-from .crud import create_notification, create_friendship, get_user, get_message
+from .crud import create_notification, create_friendship, get_user_by_id
 from .kafka_producer import publish
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ class FriendRequestWorker(BaseWorker):
             
             if action == "send_request":
                 # Create notification for friend request
-                from_user = await get_user(from_user_id)
+                from_user = await get_user_by_id(from_user_id)
                 if from_user:
                     await create_notification(
                         to_user_id,
@@ -107,7 +107,7 @@ class FriendRequestWorker(BaseWorker):
                 await create_friendship(from_user_id, to_user_id)
                 
                 # Create notification for acceptance
-                to_user = await get_user(to_user_id)
+                to_user = await get_user_by_id(to_user_id)
                 if to_user:
                     await create_notification(
                         from_user_id,
@@ -151,7 +151,7 @@ class MessageWorker(BaseWorker):
             message_id = data["message_id"]
             
             # Create notification for new message
-            sender = await get_user(sender_id)
+            sender = await get_user_by_id(sender_id)
             if sender:
                 await create_notification(
                     recipient_id,

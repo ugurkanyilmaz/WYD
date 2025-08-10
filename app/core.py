@@ -5,10 +5,37 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Global connection variables
 KAFKA_PRODUCER = None
 KAFKA_CONSUMER = None
 REDIS = None
 MONGO = None
+
+# Connection ready flags
+_redis_ready = False
+_kafka_ready = False
+_mongo_ready = False
+
+async def get_redis():
+    """Get Redis connection, initialize if not ready"""
+    global REDIS, _redis_ready
+    if not _redis_ready or REDIS is None:
+        await redis_startup()
+    return REDIS
+
+async def get_kafka_producer():
+    """Get Kafka producer, initialize if not ready"""
+    global KAFKA_PRODUCER, _kafka_ready
+    if not _kafka_ready or KAFKA_PRODUCER is None:
+        await kafka_startup()
+    return KAFKA_PRODUCER
+
+async def get_mongo():
+    """Get MongoDB client, initialize if not ready"""
+    global MONGO, _mongo_ready
+    if not _mongo_ready or MONGO is None:
+        await mongo_startup()
+    return MONGO
 
 def init_metrics(port: int = 8001):
     """Initialize Prometheus metrics server"""
@@ -20,7 +47,7 @@ def init_metrics(port: int = 8001):
 
 async def kafka_startup():
     """Start Kafka producer with improved error handling and retries"""
-    global KAFKA_PRODUCER
+    global KAFKA_PRODUCER, _kafka_ready
     
     try:
         from aiokafka import AIOKafkaProducer
@@ -28,6 +55,7 @@ async def kafka_startup():
     except ImportError as e:
         logger.warning(f'Kafka import failed: {e}')
         KAFKA_PRODUCER = None
+        _kafka_ready = False
         return
     
     brokers = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092')
@@ -48,8 +76,7 @@ async def kafka_startup():
                 max_batch_size=32768,
                 linger_ms=100,  # Allow batching for better throughput
                 compression_type='gzip',  # Compress messages
-                acks='all',  # Wait for all replicas
-                retries=3
+                acks='all'  # Wait for all replicas
             )
             
             await KAFKA_PRODUCER.start()
@@ -58,6 +85,7 @@ async def kafka_startup():
             await KAFKA_PRODUCER.send('test-topic', b'connection-test')
             
             logger.info("Kafka producer connected successfully")
+            _kafka_ready = True
             break
             
         except Exception as e:
@@ -65,9 +93,10 @@ async def kafka_startup():
             if KAFKA_PRODUCER:
                 try:
                     await KAFKA_PRODUCER.stop()
-                except:
+                except Exception:
                     pass
                 KAFKA_PRODUCER = None
+            _kafka_ready = False
             
             if attempt < max_retries - 1:
                 logger.info(f"Retrying Kafka connection in {retry_delay} seconds...")
@@ -77,13 +106,14 @@ async def kafka_startup():
 
 async def redis_startup():
     """Start Redis connection with improved error handling and connection pooling"""
-    global REDIS
+    global REDIS, _redis_ready
     
     try:
-        import aioredis
+        from redis.asyncio import Redis
     except ImportError as e:
         logger.warning(f'Redis import failed: {e}')
         REDIS = None
+        _redis_ready = False
         return
     
     redis_url = os.getenv('REDIS_URL', 'redis://redis:6379/0')
@@ -94,21 +124,19 @@ async def redis_startup():
         try:
             logger.info(f"Attempting to connect to Redis: {redis_url} (attempt {attempt + 1}/{max_retries})")
             
-            REDIS = aioredis.from_url(
+            REDIS = Redis.from_url(
                 redis_url,
                 decode_responses=False,
                 max_connections=20,
-                retry_on_timeout=True,
-                retry_on_error=[ConnectionError, TimeoutError],
-                health_check_interval=30,
                 socket_connect_timeout=5,
-                socket_timeout=5
+                socket_timeout=5,
             )
             
             # Test the connection
             await REDIS.ping()
             
             logger.info("Redis connected successfully")
+            _redis_ready = True
             break
             
         except Exception as e:
@@ -116,9 +144,10 @@ async def redis_startup():
             if REDIS:
                 try:
                     await REDIS.close()
-                except:
+                except Exception:
                     pass
                 REDIS = None
+            _redis_ready = False
             
             if attempt < max_retries - 1:
                 logger.info(f"Retrying Redis connection in {retry_delay} seconds...")
@@ -128,13 +157,14 @@ async def redis_startup():
 
 async def mongo_startup():
     """Start MongoDB connection with improved error handling"""
-    global MONGO
+    global MONGO, _mongo_ready
     
     try:
         from motor.motor_asyncio import AsyncIOMotorClient
     except ImportError as e:
         logger.warning(f'MongoDB import failed: {e}')
         MONGO = None
+        _mongo_ready = False
         return
     
     mongo_url = os.getenv('MONGO_URL', 'mongodb://mongo:27017')
@@ -152,14 +182,13 @@ async def mongo_startup():
                 socketTimeoutMS=5000,
                 maxPoolSize=50,
                 minPoolSize=5,
-                retryWrites=True,
-                retryReads=True
             )
             
-            # Test the connection
-            await MONGO.admin.command('ping')
+            # Test the connection with a simple command
+            server_info = await MONGO.admin.command('ping')
             
-            logger.info("MongoDB connected successfully")
+            logger.info(f"MongoDB connected successfully: {server_info}")
+            _mongo_ready = True
             break
             
         except Exception as e:
@@ -167,9 +196,10 @@ async def mongo_startup():
             if MONGO:
                 try:
                     MONGO.close()
-                except:
+                except Exception:
                     pass
                 MONGO = None
+            _mongo_ready = False
             
             if attempt < max_retries - 1:
                 logger.info(f"Retrying MongoDB connection in {retry_delay} seconds...")
@@ -191,7 +221,7 @@ async def create_kafka_topics():
         "media-processing-queue",
         "email-notifications-queue",
         "push-notifications-queue",
-        "analytics-queue"
+        "analytics-queue",
     ]
     
     try:
@@ -206,18 +236,20 @@ async def create_kafka_topics():
         # Create topics with appropriate configuration for high throughput
         new_topics = []
         for topic in topics:
-            new_topics.append(NewTopic(
-                name=topic,
-                num_partitions=8,  # Multiple partitions for scalability
-                replication_factor=1,  # Single replica for development
-                topic_configs={
-                    'cleanup.policy': 'delete',
-                    'retention.ms': str(7 * 24 * 60 * 60 * 1000),  # 7 days
-                    'segment.ms': str(24 * 60 * 60 * 1000),  # 1 day
-                    'max.message.bytes': str(1024 * 1024),  # 1MB
-                    'compression.type': 'gzip'
-                }
-            ))
+            new_topics.append(
+                NewTopic(
+                    name=topic,
+                    num_partitions=8,  # Multiple partitions for scalability
+                    replication_factor=1,  # Single replica for development
+                    topic_configs={
+                        'cleanup.policy': 'delete',
+                        'retention.ms': str(7 * 24 * 60 * 60 * 1000),  # 7 days
+                        'segment.ms': str(24 * 60 * 60 * 1000),  # 1 day
+                        'max.message.bytes': str(1024 * 1024),  # 1MB
+                        'compression.type': 'gzip',
+                    },
+                )
+            )
         
         await admin.create_topics(new_topics)
         logger.info(f"Created Kafka topics: {topics}")
@@ -227,7 +259,7 @@ async def create_kafka_topics():
     finally:
         try:
             await admin.close()
-        except:
+        except Exception:
             pass
 
 async def shutdown_connections():
