@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from .routes import router
 from .core import kafka_startup, redis_startup, init_metrics, mongo_startup
 from .queue_manager import queue_manager
@@ -28,6 +29,9 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+
+# Mount static files for profile pictures
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get('/healthz')
 async def healthz():

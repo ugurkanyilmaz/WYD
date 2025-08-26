@@ -258,7 +258,8 @@ async def get_user_profile(user_id: int):
         "email": user.email,
         "phone_number": user.phone_number,
         "display_name": user.display_name,
-        "profile_picture_url": user.profile_picture_url
+        "profile_picture_url": user.profile_picture_url,
+        "bio": user.bio
     }
     await cache_user_data(user_id, user_dict, ttl=1800)
     

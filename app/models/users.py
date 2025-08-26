@@ -12,5 +12,6 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     display_name = Column(String, nullable=True)
     profile_picture_url = Column(String, nullable=True)
+    bio = Column(String(500), nullable=True)  # Bio field - max 500 characters
     blocked = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

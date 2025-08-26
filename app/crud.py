@@ -159,3 +159,63 @@ async def list_dialog(user_id:int, peer_id:int):
         ).order_by(Message.created_at.asc())
         res = await session.execute(q)
         return res.scalars().all()
+
+# Profile Management
+async def update_profile_picture(user_id: int, picture_url: str):
+    """Update user's profile picture URL"""
+    async with AsyncSessionLocal() as session:
+        q = await session.execute(select(User).where(User.id == user_id))
+        user = q.scalars().first()
+        if not user:
+            return None
+        
+        user.profile_picture_url = picture_url
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+async def remove_profile_picture(user_id: int):
+    """Remove user's profile picture"""
+    async with AsyncSessionLocal() as session:
+        q = await session.execute(select(User).where(User.id == user_id))
+        user = q.scalars().first()
+        if not user:
+            return None
+        
+        old_url = user.profile_picture_url
+        user.profile_picture_url = None
+        await session.commit()
+        await session.refresh(user)
+        return user, old_url
+
+async def update_user_bio(user_id: int, bio: str):
+    """Update user's bio"""
+    async with AsyncSessionLocal() as session:
+        q = await session.execute(select(User).where(User.id == user_id))
+        user = q.scalars().first()
+        if not user:
+            return None
+        
+        user.bio = bio
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+async def update_user_display_name(user_id: int, display_name: str):
+    """Update user's display name"""
+    async with AsyncSessionLocal() as session:
+        q = await session.execute(select(User).where(User.id == user_id))
+        user = q.scalars().first()
+        if not user:
+            return None
+        
+        user.display_name = display_name
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+async def get_user_profile(user_id: int):
+    """Get user profile with full information"""
+    async with AsyncSessionLocal() as session:
+        q = await session.execute(select(User).where(User.id == user_id))
+        return q.scalars().first()

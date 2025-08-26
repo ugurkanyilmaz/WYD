@@ -24,6 +24,7 @@ class UserOut(BaseModel):
     phone_number: str
     display_name: Optional[str]
     profile_picture_url: Optional[str]
+    bio: Optional[str]  # Bio field
 
     class Config:
         orm_mode = True
@@ -37,6 +38,19 @@ class LoginIn(BaseModel):
 
 class RefreshIn(BaseModel):
     refresh_token: str
+
+# Profile Management Schemas
+class ProfileUpdateIn(BaseModel):
+    bio: Optional[str] = None
+    display_name: Optional[str] = None
+
+class ProfilePictureUploadOut(BaseModel):
+    profile_picture_url: str
+    message: str
+
+class ActionOkOut(BaseModel):
+    ok: bool = True
+    message: Optional[str] = None
 
 class LogoutIn(BaseModel):
     refresh_token: str
